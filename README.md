@@ -46,6 +46,11 @@ Para ligar a homologação numa sessão local do Claude Code — sequência comp
 com confirmação de destino e revisão do que cada push altera:
 **[`docs/SESSAO-LOCAL.md`](docs/SESSAO-LOCAL.md)**.
 
+Retomando o projeto do zero, ou levando-o para o repositório do cliente, comece
+por **[`docs/CONTINUIDADE-CLIENTE.md`](docs/CONTINUIDADE-CLIENTE.md)**: estado
+real, branch consolidada, o que foi e o que não foi testado, e as regras que não
+mudam.
+
 Feito para celular entre 360 e 430 px de largura, com adaptação para computador
 (navegação lateral a partir de 860 px).
 
