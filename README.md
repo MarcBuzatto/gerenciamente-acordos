@@ -42,6 +42,10 @@ Variáveis, migrações, teste de permissões, separação entre ambientes,
 recuperação do segundo fator, ensaio de exportação/restauração e pendências:
 **[`docs/INTEGRACAO.md`](docs/INTEGRACAO.md)**.
 
+Para ligar a homologação numa sessão local do Claude Code — sequência completa,
+com confirmação de destino e revisão do que cada push altera:
+**[`docs/SESSAO-LOCAL.md`](docs/SESSAO-LOCAL.md)**.
+
 Feito para celular entre 360 e 430 px de largura, com adaptação para computador
 (navegação lateral a partir de 860 px).
 

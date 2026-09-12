@@ -8,11 +8,9 @@
 # no histórico do shell). Exporte antes:
 #
 #   read -rsp 'URL do banco: ' SUPABASE_DB_URL && export SUPABASE_DB_URL && echo
-#   ./scripts/verificar-homologacao.sh              # exige aal2 (produção)
-#   ./scripts/verificar-homologacao.sh homologacao  # aceita aal2 relaxado
+#   ./scripts/verificar-homologacao.sh
 set -euo pipefail
 
-AMBIENTE="${1:-producao}"
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
@@ -46,7 +44,7 @@ psql "$SUPABASE_DB_URL" -X -q -c "
 
 echo
 echo "== Conformidade =="
-psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -v ambiente="$AMBIENTE" \
+psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 \
   -f "${RAIZ}/supabase/tests/02_conformidade.sql"
 
 echo

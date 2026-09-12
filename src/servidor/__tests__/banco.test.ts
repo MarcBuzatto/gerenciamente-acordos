@@ -330,60 +330,6 @@ describe.skipIf(!temBanco)('integração com o banco', () => {
     }
   })
 
-  it('6f. relaxar o nível exigido não relaxa isolamento nem papéis', async () => {
-    // A verificação em duas etapas do Supabase é recurso de plano pago. Num
-    // projeto de homologação gratuito o nível exigido pode ser baixado para
-    // aal1 — direto no banco, nunca pela aplicação. Este teste garante que
-    // isso libera SÓ o segundo fator: operação, papel e autenticação continuam
-    // valendo exatamente igual.
-    await comAdmin(async (c) => {
-      await c.query(
-        `update public.politica_autenticacao
-            set nivel_exigido = 'aal1', motivo = 'homologacao no plano gratuito sem MFA'`,
-      )
-    })
-
-    const semMfa = await Sessao.abrir('authenticated', {
-      sub: idA1,
-      email: 'prop.a@exemplo.test',
-      aal: 'aal1',
-    })
-    try {
-      // Agora a proprietária em aal1 trabalha normalmente.
-      expect(await semMfa.consultar(`select id from public.clientes`)).not.toHaveLength(0)
-      expect(
-        await semMfa.consultar(`select * from public.listar_vencimentos($1, 'todos')`, [opA]),
-      ).not.toHaveLength(0)
-
-      // Mas nada mais afrouxou:
-      await anonimo.recusa(`select * from public.clientes`)
-      await anonimo.recusa(`select * from public.listar_vencimentos($1, 'todos')`, [opA])
-      expect(await semVinculo.consultar(`select id from public.clientes`)).toHaveLength(0)
-      expect(await propB.consultar(`select id from public.clientes where operacao_id = $1`, [opA]))
-        .toHaveLength(0)
-      expect(await assistA.consultar(`select id from public.contratos`)).toHaveLength(0)
-      expect(await assistA.recusa(`select * from public.indicadores($1)`, [opA]))
-        .toMatch(/restrita ao proprietário/i)
-    } finally {
-      await semMfa.fechar()
-      await comAdmin(async (c) => {
-        await c.query(
-          `update public.politica_autenticacao set nivel_exigido = 'aal2', motivo = null`,
-        )
-      })
-    }
-  })
-
-  it('6g. a política de autenticação não é alcançável pela aplicação', async () => {
-    // Nem leitura, nem escrita: quem quiser mudar o nível exigido precisa de
-    // acesso direto ao banco.
-    await propA.recusa(`select * from public.politica_autenticacao`)
-    await propA.recusa(`update public.politica_autenticacao set nivel_exigido = 'aal1'`)
-    await assistA.recusa(`select * from public.politica_autenticacao`)
-    await anonimo.recusa(`select * from public.politica_autenticacao`)
-    await propA.recusa(`select app.nivel_exigido()`)
-  })
-
   it('6b. revogação vale já na consulta seguinte, com sessão aberta', async () => {
     const usuarioTmp = await criarUsuario('temporario@exemplo.test', 'Temporário')
     const sessaoTmp = await Sessao.abrir('authenticated', {

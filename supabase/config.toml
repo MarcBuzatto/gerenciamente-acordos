@@ -59,13 +59,16 @@ otp_expiry = 3600
 enable_signup = false
 enable_confirmations = false
 
-# Verificação em duas etapas por aplicativo autenticador.
+# Verificação em duas etapas por aplicativo autenticador (TOTP).
 #
-# ATENÇÃO: o template oficial da CLI registra que MFA é recurso do plano Pro.
-# Num projeto no plano gratuito, o cadastro do segundo fator pode falhar. Nesse
-# caso, veja `supabase/migrations/…_politica_autenticacao.sql`: o nível exigido
-# é ajustável por ambiente, direto no banco, e o script de conformidade avisa
-# quando está relaxado.
+# O plano Free inclui "Basic Multi-Factor Auth", que é justamente o TOTP por
+# aplicativo autenticador usado aqui. O que fica restrito ao plano pago é
+# "Advanced MFA — Phone", que este projeto não usa.
+# https://supabase.com/pricing · https://supabase.com/docs/guides/auth/auth-mfa
+#
+# O comentário do template padrão de config.toml da CLI ("MFA is available to
+# Supabase Pro plan") é impreciso quanto a isso — a tabela de planos é a
+# referência.
 [auth.mfa]
 max_enrolled_factors = 5
 

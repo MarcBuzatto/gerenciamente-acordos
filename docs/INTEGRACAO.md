@@ -25,13 +25,22 @@ Dois bloqueios, independentes um do outro:
    você cole senha ou chave administrativa numa conversa seria errado. O
    `supabase login` e o `db push` precisam rodar na sua máquina.
 
-Há ainda um ponto de plano a decidir: **a verificação em duas etapas do Supabase
-é recurso do plano Pro** — é o que diz o template oficial de `config.toml` da
-CLI ("Multi-factor-authentication is available to Supabase Pro plan"). Não
-consegui abrir a documentação online daqui para confirmar se isso continua
-valendo hoje. Num projeto gratuito, se o cadastro do segundo fator falhar, use o
-ajuste da seção 4.1 — ele libera a homologação sem afrouxar isolamento nem
-papéis.
+A continuidade está preparada para uma sessão local do Claude Code:
+**[`docs/SESSAO-LOCAL.md`](SESSAO-LOCAL.md)** traz a sequência completa, com as
+travas de confirmação de destino e de revisão do que cada push altera.
+
+Sobre o plano: **o Free inclui "Basic Multi-Factor Auth"**, que é exatamente o
+TOTP por aplicativo autenticador usado aqui. O que fica restrito ao plano pago é
+"Advanced MFA — Phone", que este projeto não usa
+([planos](https://supabase.com/pricing) ·
+[documentação de MFA](https://supabase.com/docs/guides/auth/auth-mfa)). O
+comentário do template padrão de `config.toml` da CLI diz "MFA is available to
+Supabase Pro plan" e é impreciso — a tabela de planos é a referência.
+
+Portanto **`aal2` é exigido na homologação e na produção, sem exceção**. Não há
+mecanismo de rebaixamento no código: `app.tem_aal2()` compara a claim `aal` da
+sessão com `aal2` e pronto, e o script de conformidade falha se alguém
+introduzir dependência de configuração ajustável nessa função.
 
 ---
 
@@ -68,7 +77,6 @@ ordem:
 | `…000200_dominio.sql` | feriados, calendário, repartição de centavos, atraso |
 | `…000300_rls.sql` | privilégios, helpers de papel e Row Level Security |
 | `…000400_rpc.sql` | funções transacionais e projeções autorizadas |
-| `…000500_politica_autenticacao.sql` | nível de autenticação exigido, por ambiente |
 
 ### Roteiro para ligar a homologação
 
@@ -85,22 +93,24 @@ npm install
 1. **Criar o projeto** em supabase.com → New project, plano **Free**. Nome
    sugerido: `acordos-homologacao`. Região `South America (São Paulo)`. Guarde a
    senha do banco no seu gerenciador de senhas — ela não vai para o repositório.
-2. **Confirmar que o destino está certo e vazio.** Antes de qualquer push, no
-   SQL Editor do painel:
-   ```sql
-   select current_database(), current_user;
-   select count(*) from auth.users;          -- deve ser 0
-   select count(*) from information_schema.tables where table_schema = 'public';
-   ```
-   Se aparecer tabela de outro projeto ou usuário já cadastrado, **pare**: o
-   destino está errado.
-3. **Aplicar as migrações:**
+2. **Confirmar o destino.** `auth.users` vazio NÃO prova que o banco está
+   vazio: pode haver tabelas de outro projeto, arquivos no storage e migrações
+   já aplicadas. Use a pré-checagem, que olha o banco inteiro e dá um veredito:
    ```bash
-   npx supabase login          # abre o navegador, não pede senha aqui
-   npx supabase link --project-ref SEU_REF
-   npx supabase db push
-   npx supabase config push    # aplica o auth de supabase/config.toml
+   read -rsp 'URL do banco: ' SUPABASE_DB_URL && export SUPABASE_DB_URL && echo
+   ./scripts/conferir-destino.sh
    ```
+   Só siga com veredito **LIMPO** (ou um re-push consciente).
+3. **Revisar e aplicar as migrações:**
+   ```bash
+   npx supabase login             # abre o navegador, não pede senha aqui
+   npx supabase link --project-ref SEU_REF
+   npx supabase db push --dry-run # o que SERIA aplicado — leia antes
+   npx supabase db push
+   ```
+   A configuração de auth é um push separado, e **sobrescreve o remoto**:
+   revise antes com `npx supabase config diff`, item a item, e só então
+   `npx supabase config push`.
 4. **Verificar o que chegou** (este script não pede a URL na linha de comando,
    para a senha não ficar no histórico do shell):
    ```bash
@@ -108,10 +118,8 @@ npm install
    ./scripts/verificar-homologacao.sh
    ```
    Ele mostra o destino, a contagem de registros, as migrações aplicadas e roda
-   as 14 conferências de conformidade (RLS, privilégios, funções, gatilhos,
-   chaves compostas, nível de autenticação). Se o TOTP não estiver disponível no
-   plano, veja a seção 4.1 e rode
-   `./scripts/verificar-homologacao.sh homologacao`.
+   as 13 conferências de conformidade (RLS, privilégios, funções, gatilhos,
+   chaves compostas, exigência de aal2 sem porta dos fundos).
 5. **Configurar o `.env.local`** com a URL do projeto e a chave anônima
    (Project Settings → Data API e API Keys) e subir a aplicação:
    ```bash
@@ -180,41 +188,6 @@ Os testes de integração são pulados com aviso quando não há banco em
 3. Criar a operação (ela nasce vazia; nenhum dado de exemplo é inserido).
 4. Em **Mais → Equipe**, gerar um convite e abrir o link em outra conta.
 5. Conferir que o assistente não vê Contratos na navegação, nem indicadores.
-
-### 4.1 Nível de autenticação exigido (plano gratuito sem MFA)
-
-Por padrão, **nenhum dado de operação é liberado sem `aal2`** — sessão que
-passou pela verificação em duas etapas. Se o projeto de homologação estiver num
-plano em que o TOTP não pode ser cadastrado, ninguém alcança dado nenhum e o
-ambiente fica impossível de validar.
-
-Para esse caso existe `public.politica_autenticacao`, com uma linha só:
-
-```sql
--- SQL Editor do painel, ou psql. Não é alcançável pela aplicação.
-update public.politica_autenticacao
-   set nivel_exigido = 'aal1',
-       motivo = 'homologacao no plano gratuito, sem MFA disponivel';
-```
-
-Três coisas mantêm isso honesto:
-
-- **O padrão é `aal2`.** Quem não mexe fica no comportamento seguro.
-- **A tabela é inalcançável pela API**: RLS ligada, nenhuma política, nenhum
-  privilégio. Nem proprietário, nem assistente, nem sessão anônima leem ou
-  escrevem. Só muda com acesso direto ao banco.
-- **O script de conformidade falha** quando o nível está em `aal1`, a menos que
-  a execução declare `homologacao` — e mesmo assim imprime um aviso.
-
-Relaxar o segundo fator **não** relaxa mais nada: isolamento entre operações,
-papéis, recusa de sessão anônima e restrições do assistente continuam valendo
-igual. Isso é verificado por teste (`6f` em `src/servidor/__tests__/banco.test.ts`).
-
-Antes de qualquer uso real, voltar para `aal2`:
-
-```sql
-update public.politica_autenticacao set nivel_exigido = 'aal2', motivo = null;
-```
 
 ### Direto na API
 
@@ -415,8 +388,6 @@ publicar a demonstração também como site, use `npm run build:demo` num projet
 
 - **Ligar a homologação de verdade** (seção 0 e 2): criar o projeto, aplicar as
   migrações e validar os fluxos no serviço real. Nada disso foi feito ainda.
-- **Disponibilidade de MFA no plano escolhido** (seção 0 e 4.1). Se ficar em
-  `aal1` na homologação, voltar a `aal2` antes de qualquer uso real.
 - Backup, retenção e ensaio de restauração (seção 6).
 - SMTP próprio (seção 8).
 - Confirmação do fluxo de recuperação do segundo fator (seção 7).

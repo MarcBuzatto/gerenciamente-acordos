@@ -13,11 +13,6 @@
 -- =============================================================================
 
 \set ON_ERROR_STOP on
-\set ambiente :ambiente
--- `-v ambiente=homologacao` afrouxa apenas a conferência do nível de
--- autenticação; todo o resto continua obrigatório.
-select set_config('acordos.ambiente',
-  case when :'ambiente' = ':ambiente' then 'producao' else :'ambiente' end, false) \gset ignorado_
 
 create or replace function pg_temp.conferir(condicao boolean, descricao text, detalhe text default null)
 returns void language plpgsql as $$
@@ -41,14 +36,10 @@ begin
   perform pg_temp.conferir(v_lista is null, 'todas as tabelas de public têm RLS', v_lista);
 
   -- 2. Toda tabela com pelo menos uma política ------------------------------
-  -- `politica_autenticacao` é a exceção proposital: RLS ligada e NENHUMA
-  -- política, o que a torna inalcançável pela API. A conferência 13 garante
-  -- que ela também não tem privilégio concedido.
   select string_agg(c.relname, ', ') into v_lista
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and c.relkind = 'r'
-     and c.relname <> 'politica_autenticacao'
      and not exists (select 1 from pg_policy p where p.polrelid = c.oid);
   perform pg_temp.conferir(v_lista is null, 'nenhuma tabela ficou sem política', v_lista);
 
@@ -166,33 +157,21 @@ begin
   perform pg_temp.conferir(v_lista is null,
     'gatilho de bloqueio de exclusão presente no histórico financeiro', v_lista);
 
-  -- 12. Nível de autenticação exigido ---------------------------------------
-  -- Em produção isto tem de estar em `aal2`. A execução pode declarar
-  -- `-v ambiente=homologacao` para aceitar `aal1` num projeto de teste onde a
-  -- verificação em duas etapas não está disponível — e mesmo assim o aviso sai.
-  declare
-    v_nivel text;
-    v_ambiente text := coalesce(nullif(current_setting('acordos.ambiente', true), ''), 'producao');
-  begin
-    select nivel_exigido into v_nivel from public.politica_autenticacao limit 1;
-    if v_nivel = 'aal2' then
-      raise notice 'ok — nível de autenticação exigido é aal2';
-    elsif v_ambiente = 'homologacao' then
-      raise warning 'ATENÇÃO — nível de autenticação relaxado para %. Aceito só em homologação; NÃO publique assim para uso real.', v_nivel;
-    else
-      raise exception 'FALHOU: nível de autenticação exigido está em %, e não em aal2', v_nivel;
-    end if;
-  end;
+  -- 12. Exigência de segundo fator sem porta dos fundos --------------------
+  -- `app.tem_aal2()` precisa comparar a claim `aal` da sessão com 'aal2', sem
+  -- depender de tabela de configuração nem de qualquer outro caminho que
+  -- permitisse rebaixar a exigência sem alterar código revisado.
+  select pg_get_functiondef(p.oid) into v_lista
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'app' and p.proname = 'tem_aal2';
+  perform pg_temp.conferir(v_lista like '%aal2%', 'app.tem_aal2 compara com aal2');
+  perform pg_temp.conferir(
+    v_lista not ilike '%politica_autenticacao%' and v_lista not ilike '%nivel_exigido%',
+    'exigência de aal2 não depende de configuração ajustável'
+  );
 
-  -- 13. Política de autenticação inalcançável pela API ----------------------
-  select string_agg(grantee || ':' || privilege_type, ', ') into v_lista
-    from information_schema.role_table_grants
-   where table_schema = 'public' and table_name = 'politica_autenticacao'
-     and grantee in ('anon', 'authenticated');
-  perform pg_temp.conferir(v_lista is null,
-    'politica_autenticacao não é alcançável pela aplicação', v_lista);
-
-  -- 14. Dinheiro dentro da faixa segura para JavaScript ---------------------
+  -- 13. Dinheiro dentro da faixa segura para JavaScript ---------------------
   perform pg_temp.conferir(
     (select count(*) from pg_type t
       join pg_namespace n on n.oid = t.typnamespace
