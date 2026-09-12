@@ -1,16 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { Cabecalho } from '../components/Layout'
 import { Aviso, CampoBusca, Vazio } from '../components/Base'
 import { ItemParcela } from '../components/ItemParcela'
 import { PainelPagamento } from '../components/PainelPagamento'
-import { avaliarTodasParcelas } from '../../domain/indicadores'
-import { compararDatas } from '../../domain/dates'
+import { classificar, type FiltroVencimento, type LinhaVencimento } from '../../data/api'
 import { formatarMoeda } from '../../domain/dinheiro'
-import type { ParcelaAvaliada } from '../../domain/tipos'
 
-type Filtro = 'hoje' | 'atrasados' | 'proximos' | 'pagos'
+type Filtro = Exclude<FiltroVencimento, 'todos'>
 
 const FILTROS: { id: Filtro; rotulo: string }[] = [
   { id: 'hoje', rotulo: 'Hoje' },
@@ -20,54 +18,39 @@ const FILTROS: { id: Filtro; rotulo: string }[] = [
 ]
 
 export function Vencimentos() {
-  const { estado, dataReferencia } = useApp()
+  const { buscarVencimentos, ehProprietario, carregando: carregandoApp } = useApp()
   const [params, setParams] = useSearchParams()
   const filtro = (params.get('filtro') as Filtro) ?? 'hoje'
   const [busca, setBusca] = useState('')
-  const [emPagamento, setEmPagamento] = useState<ParcelaAvaliada | null>(null)
+  const [lista, setLista] = useState<LinhaVencimento[]>([])
+  const [carregando, setCarregando] = useState(true)
+  const [falha, setFalha] = useState<string | null>(null)
+  const [emPagamento, setEmPagamento] = useState<LinhaVencimento | null>(null)
   const [mensagem, setMensagem] = useState<string | null>(null)
   const posicaoScroll = useRef(0)
 
-  const avaliadas = useMemo(
-    () => avaliarTodasParcelas(estado, dataReferencia),
-    [estado, dataReferencia],
-  )
-
-  const porFiltro = useMemo(() => {
-    const hoje = avaliadas.filter((a) => a.situacao === 'hoje')
-    const atrasados = avaliadas
-      .filter((a) => a.situacao === 'atrasada')
-      // Do vencimento mais antigo para o mais recente.
-      .sort((a, b) => compararDatas(a.parcela.vencimento, b.parcela.vencimento))
-    const proximos = avaliadas
-      .filter((a) => a.situacao === 'a_vencer')
-      .sort((a, b) => compararDatas(a.parcela.vencimento, b.parcela.vencimento))
-    const pagos = avaliadas
-      .filter((a) => a.situacao === 'paga')
-      .sort((a, b) =>
-        compararDatas(b.pagamento?.dataPagamento ?? '', a.pagamento?.dataPagamento ?? ''),
-      )
-    return { hoje, atrasados, proximos, pagos }
-  }, [avaliadas])
-
-  const lista = useMemo(() => {
-    const base = porFiltro[filtro]
-    const termo = busca.trim().toLowerCase()
-    if (!termo) return base
-    return base.filter(
-      (a) =>
-        a.cliente.nome.toLowerCase().includes(termo) ||
-        a.cliente.telefone.replace(/\D/g, '').includes(termo.replace(/\D/g, '')) ||
-        String(a.contrato.numero).includes(termo),
-    )
-  }, [porFiltro, filtro, busca])
-
-  const totalLista = lista.reduce((s, a) => s + a.totalDevidoCents, 0)
+  const carregar = useCallback(async () => {
+    setCarregando(true)
+    setFalha(null)
+    try {
+      setLista(await buscarVencimentos(filtro, busca))
+    } catch (e) {
+      setFalha(classificar(e).message)
+      setLista([])
+    } finally {
+      setCarregando(false)
+    }
+  }, [buscarVencimentos, filtro, busca])
 
   useEffect(() => {
-    if (mensagem) {
-      window.scrollTo({ top: posicaoScroll.current })
-    }
+    // Espera a primeira carga do contexto para não pedir antes de ter operação.
+    if (carregandoApp) return
+    const t = setTimeout(() => void carregar(), busca ? 250 : 0)
+    return () => clearTimeout(t)
+  }, [carregar, carregandoApp, busca])
+
+  useEffect(() => {
+    if (mensagem) window.scrollTo({ top: posicaoScroll.current })
   }, [mensagem])
 
   function trocarFiltro(f: Filtro) {
@@ -76,12 +59,22 @@ export function Vencimentos() {
     setParams(proximo, { replace: true })
   }
 
+  const total = lista.reduce((s, a) => s + a.totalDevidoCents, 0)
+
   return (
     <>
       <Cabecalho titulo="Vencimentos" subtitulo="Cobranças do dia, atrasos e recebimentos" />
 
       <div className="pilha">
         {mensagem && <Aviso tipo="positivo">{mensagem}</Aviso>}
+        {falha && (
+          <Aviso tipo="erro">
+            {falha}{' '}
+            <button type="button" className="btn btn--fantasma btn--pequeno" onClick={() => void carregar()}>
+              Tentar de novo
+            </button>
+          </Aviso>
+        )}
 
         <div className="filtros" role="group" aria-label="Filtrar vencimentos">
           {FILTROS.map((f) => (
@@ -93,7 +86,6 @@ export function Vencimentos() {
               onClick={() => trocarFiltro(f.id)}
             >
               {f.rotulo}
-              <span className="filtro__contagem">{porFiltro[f.id].length}</span>
             </button>
           ))}
         </div>
@@ -104,19 +96,19 @@ export function Vencimentos() {
           placeholder="Buscar por cliente, telefone ou contrato"
         />
 
-        {lista.length > 0 && (
+        {!carregando && lista.length > 0 && (
           <div className="linha-entre" style={{ padding: '0 2px' }}>
             <span className="txt-sec">
               {lista.length} {lista.length === 1 ? 'parcela' : 'parcelas'}
             </span>
             <span className="txt-sec">
               {filtro === 'pagos' ? 'Total recebido' : 'Total'}:{' '}
-              <strong className="num">{formatarMoeda(totalLista)}</strong>
+              <strong className="num">{formatarMoeda(total)}</strong>
             </span>
           </div>
         )}
 
-        {filtro === 'atrasados' && porFiltro.atrasados.length > 0 && (
+        {filtro === 'atrasados' && !carregando && lista.length > 0 && (
           <Aviso tipo="atencao">
             Diárias em atraso já estão com o acréscimo único aplicado. O valor não volta a crescer
             nos dias seguintes. Semanal e mensal aparecem em atraso sem acréscimo — regra pendente
@@ -124,7 +116,13 @@ export function Vencimentos() {
           </Aviso>
         )}
 
-        {lista.length === 0 ? (
+        {carregando ? (
+          <div className="lista" aria-busy="true" aria-label="Carregando cobranças">
+            <div className="esqueleto" style={{ height: 112 }} />
+            <div className="esqueleto" style={{ height: 112 }} />
+            <div className="esqueleto" style={{ height: 112 }} />
+          </div>
+        ) : lista.length === 0 && !falha ? (
           <Vazio
             titulo={
               busca
@@ -138,18 +136,17 @@ export function Vencimentos() {
                       : 'Nenhum pagamento registrado'
             }
             descricao={
-              busca
-                ? 'Ajuste a busca ou troque o filtro.'
-                : 'Troque o filtro ou a data de referência da demonstração.'
+              busca ? 'Ajuste a busca ou troque o filtro.' : 'Troque o filtro para ver outras cobranças.'
             }
           />
         ) : (
           <ul className="lista">
             {lista.map((item) => (
               <ItemParcela
-                key={item.parcela.id}
-                idAncora={`parcela-${item.parcela.id}`}
+                key={item.parcelaId}
+                idAncora={`parcela-${item.parcelaId}`}
                 item={item}
+                permiteAbrirContrato={ehProprietario}
                 aoRegistrar={(i) => {
                   posicaoScroll.current = window.scrollY
                   setMensagem(null)
@@ -168,6 +165,7 @@ export function Vencimentos() {
           aoConcluir={(m) => {
             setEmPagamento(null)
             setMensagem(m)
+            void carregar()
           }}
         />
       )}

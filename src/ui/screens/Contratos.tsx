@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { Cabecalho } from '../components/Layout'
 import { CampoBusca, EtiquetaContrato, Vazio } from '../components/Base'
 import { IconeAdicionar, IconeContratos, IconeSeta } from '../components/Icones'

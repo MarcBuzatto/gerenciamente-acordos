@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { Cabecalho } from '../components/Layout'
 import { Aviso, Campo, CampoBusca, Cartao, LinhaDado, Segmentado, Vazio } from '../components/Base'
 import { IconeAdicionar, IconeCheck, IconeSeta } from '../components/Icones'
@@ -18,6 +18,7 @@ import {
   type ISODate,
 } from '../../domain/dates'
 import { avaliarPrimeiroVencimento, RESUMO_REGRAS_CALENDARIO } from '../../domain/calendario'
+import { classificar } from '../../data/api'
 import { montarResumoContrato } from '../../domain/contratos'
 import type { Frequencia } from '../../domain/tipos'
 
@@ -74,6 +75,8 @@ export function ContratoNovo() {
   const [buscaCliente, setBuscaCliente] = useState('')
   const [erros, setErros] = useState<Record<string, string>>({})
   const salvando = useRef(false)
+  const [enviando, setEnviando] = useState(false)
+  const [falha, setFalha] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -159,24 +162,34 @@ export function ContratoNovo() {
     return Object.keys(novos).length === 0
   }
 
-  function salvar() {
+  async function salvar() {
     if (salvando.current || !resumo || !cliente) return
     salvando.current = true
-    const contrato = criarContrato({
-      clienteId: cliente.id,
-      principalCents,
-      taxaPercent,
-      frequencia: rascunho.frequencia,
-      qtdParcelas,
-      primeiroVencimento: ajuste.ajustado,
-      observacao: rascunho.observacao.trim() || undefined,
-    })
+    setEnviando(true)
+    setFalha(null)
     try {
-      window.sessionStorage.removeItem(CHAVE_RASCUNHO)
-    } catch {
-      // ignora
+      // O servidor recalcula juros, total, parcelas e calendário. O que a tela
+      // mostrou foi prévia; o que vale é o que voltar daqui.
+      const contratoId = await criarContrato({
+        clienteId: cliente.id,
+        principalCents,
+        taxaPercent,
+        frequencia: rascunho.frequencia,
+        qtdParcelas,
+        primeiroVencimento: ajuste.ajustado,
+        observacao: rascunho.observacao.trim() || undefined,
+      })
+      try {
+        window.sessionStorage.removeItem(CHAVE_RASCUNHO)
+      } catch {
+        // ignora
+      }
+      navegar(`/contratos/${contratoId}?criado=1`, { replace: true })
+    } catch (e) {
+      setFalha(classificar(e).message)
+      salvando.current = false
+      setEnviando(false)
     }
-    navegar(`/contratos/${contrato.id}?criado=1`, { replace: true })
   }
 
   const passos = ['Cliente', 'Condições', 'Conferência']
@@ -444,6 +457,8 @@ export function ContratoNovo() {
 
             {ajuste.explicacao && <Aviso tipo="atencao">{ajuste.explicacao}</Aviso>}
 
+            {falha && <Aviso tipo="erro">{falha}</Aviso>}
+
             <Cartao titulo={`Calendário — ${resumo.vencimentos.length} parcelas`}>
               <div className="tabela-rolagem" style={{ maxHeight: 320, overflowY: 'auto' }}>
                 <table className="tabela tabela--compacta">
@@ -482,8 +497,13 @@ export function ContratoNovo() {
               >
                 Voltar
               </button>
-              <button type="button" className="btn btn--primario" onClick={salvar}>
-                Criar contrato
+              <button
+                type="button"
+                className="btn btn--primario"
+                onClick={() => void salvar()}
+                disabled={enviando}
+              >
+                {enviando ? 'Criando…' : 'Criar contrato'}
               </button>
             </div>
           </>

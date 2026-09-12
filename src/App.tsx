@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { useApp } from './state/loja'
 import { Layout } from './ui/components/Layout'
 import { Inicio } from './ui/screens/Inicio'
 import { Clientes } from './ui/screens/Clientes'
@@ -22,6 +23,8 @@ function AoTrocarDeTela() {
 }
 
 export function App() {
+  const { ehProprietario } = useApp()
+
   return (
     <Layout>
       <AoTrocarDeTela />
@@ -31,10 +34,19 @@ export function App() {
         <Route path="/clientes/novo" element={<ClienteFormulario modo="novo" />} />
         <Route path="/clientes/:id" element={<ClienteFicha />} />
         <Route path="/clientes/:id/editar" element={<ClienteFormulario modo="editar" />} />
-        <Route path="/contratos" element={<Contratos />} />
-        <Route path="/contratos/novo" element={<ContratoNovo />} />
-        <Route path="/contratos/:id" element={<ContratoDetalhe />} />
-        <Route path="/contratos/:id/extrato" element={<Extrato />} />
+        {/*
+          As telas de contrato mostram principal, juros, taxa e totais. O
+          assistente não tem acesso a esses dados — o banco os recusa — então
+          as rotas nem existem para ele.
+        */}
+        {ehProprietario && (
+          <>
+            <Route path="/contratos" element={<Contratos />} />
+            <Route path="/contratos/novo" element={<ContratoNovo />} />
+            <Route path="/contratos/:id" element={<ContratoDetalhe />} />
+            <Route path="/contratos/:id/extrato" element={<Extrato />} />
+          </>
+        )}
         <Route path="/vencimentos" element={<Vencimentos />} />
         <Route path="/mais" element={<Mais />} />
         <Route path="/mais/regras" element={<Regras />} />

@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Nenhum segredo é usado aqui. Os testes de banco rodam contra um PostgreSQL
+# efêmero do próprio runner, com as mesmas migrações que vão para a homologação.
+# Ausência de checks não é aprovação: o que não roda aqui está listado como
+# pendência em docs/INTEGRACAO.md.
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: acordos_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGPASSWORD: postgres
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/acordos_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verificação de tipos
+        run: npx tsc -b
+
+      - name: Aplicar migrações
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d acordos_test \
+            -f supabase/tests/00_bootstrap_local.sql
+          for arquivo in supabase/migrations/*.sql; do
+            echo "aplicando $arquivo"
+            psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d acordos_test -f "$arquivo"
+          done
+
+      - name: Paridade das regras em SQL
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d acordos_test \
+            -f supabase/tests/01_dominio.sql
+
+      - name: Conformidade de segurança do esquema
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d acordos_test \
+            -f supabase/tests/02_conformidade.sql
+
+      - name: Testes de domínio e de integração
+        run: npm test
+
+      - name: Build
+        run: npm run build

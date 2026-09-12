@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { Cabecalho } from '../components/Layout'
 import { Aviso, Cartao, EtiquetaContrato, LinhaDado, Segmentado, Vazio } from '../components/Base'
 import { IconeAdicionar, IconeEditar, IconeSeta, IconeTelefone } from '../components/Icones'
@@ -64,17 +64,20 @@ export function ClienteFicha() {
       <Cabecalho titulo={cliente.nome} subtitulo={cliente.telefone} voltarPara="/clientes" />
 
       <div className="pilha">
-        <Segmentado
-          rotuloGrupo="Seções da ficha"
-          valor={aba}
-          aoMudar={setAba}
-          opcoes={[
-            { valor: 'dados', rotulo: 'Dados' },
-            { valor: 'contratos', rotulo: `Contratos (${contratos.length})` },
-          ]}
-        />
+        {/* O assistente não consulta contratos: a aba não é oferecida a ele. */}
+        {ehProprietario && (
+          <Segmentado
+            rotuloGrupo="Seções da ficha"
+            valor={aba}
+            aoMudar={setAba}
+            opcoes={[
+              { valor: 'dados', rotulo: 'Dados' },
+              { valor: 'contratos', rotulo: `Contratos (${contratos.length})` },
+            ]}
+          />
+        )}
 
-        {aba === 'dados' ? (
+        {aba === 'dados' || !ehProprietario ? (
           <>
             <Cartao
               titulo="Cadastro"

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { Cabecalho } from '../components/Layout'
 import { Aviso, EtiquetaParcela } from '../components/Base'
 import { ListaParcelas } from '../components/ListaParcelas'

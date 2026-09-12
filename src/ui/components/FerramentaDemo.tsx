@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { DATA_DEMO_INICIAL } from '../../data/seed'
 import {
   formatarData,
@@ -17,17 +17,16 @@ import { IconeAjustes, IconeRestaurar } from './Icones'
  * contas separadas; nao sao autenticacao nem controle de acesso de producao.
  */
 export function FerramentaDemo({ aoFechar }: { aoFechar: () => void }) {
+  const { operacao, usuario, dataReferencia, demo } = useApp()
+  if (!demo) throw new Error('A ferramenta de demonstração só existe no modo demo.')
   const {
     operacoes,
-    operacao,
     usuarios,
-    usuario,
-    dataReferencia,
     trocarOperacao,
     trocarUsuario,
     definirDataReferencia,
-    restaurarDemonstracao,
-  } = useApp()
+    restaurar: restaurarDemonstracao,
+  } = demo
 
   const [confirmandoRestauro, setConfirmandoRestauro] = useState<null | 'operacao' | 'tudo'>(null)
 

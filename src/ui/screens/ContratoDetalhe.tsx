@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { Cabecalho } from '../components/Layout'
 import {
   Aviso,
@@ -26,13 +26,40 @@ import { formatarMoeda, formatarPercentual } from '../../domain/dinheiro'
 import { montarQuitacao } from '../../domain/cobranca'
 import { resumirContrato } from '../../domain/indicadores'
 import type { ParcelaAvaliada, Pagamento } from '../../domain/tipos'
+import { classificar, type LinhaVencimento } from '../../data/api'
+
+/**
+ * A tela de contrato trabalha com o estado completo; o painel de pagamento
+ * trabalha com a projeção de cobrança. Este adaptador liga os dois sem duplicar
+ * o painel.
+ */
+function paraLinha(a: ParcelaAvaliada): LinhaVencimento {
+  return {
+    parcelaId: a.parcela.id,
+    contratoId: a.contrato.id,
+    clienteId: a.cliente.id,
+    clienteNome: a.cliente.nome,
+    clienteTelefone: a.cliente.telefone,
+    contratoNumero: a.contrato.numero,
+    parcelaNumero: a.parcela.numero,
+    qtdParcelas: a.contrato.qtdParcelas,
+    vencimento: a.parcela.vencimento,
+    dataContrato: a.contrato.dataContrato,
+    situacao: a.situacao,
+    valorOriginalCents: a.valorOriginalCents,
+    acrescimoCents: a.acrescimoCents,
+    totalDevidoCents: a.totalDevidoCents,
+    diasDeAtraso: a.diasDeAtraso,
+    dataPagamento: a.pagamento?.dataPagamento ?? null,
+  }
+}
 
 const ROTULO_FREQUENCIA = { diaria: 'Diária', semanal: 'Semanal', mensal: 'Mensal' } as const
 
 export function ContratoDetalhe() {
   const { id } = useParams()
   const [params] = useSearchParams()
-  const { estado, dataReferencia, ehProprietario, usuarios, estornarPagamento } = useApp()
+  const { estado, dataReferencia, ehProprietario, membros, estornarPagamento } = useApp()
 
   const [emPagamento, setEmPagamento] = useState<ParcelaAvaliada | null>(null)
   const [quitacaoAberta, setQuitacaoAberta] = useState(false)
@@ -56,7 +83,7 @@ export function ContratoDetalhe() {
     )
   }
 
-  const nomeUsuario = (uid: string) => usuarios.find((u) => u.id === uid)?.nome ?? 'Usuário'
+  const nomeUsuario = (uid: string) => membros.find((u) => u.id === uid)?.nome ?? 'Usuário'
   const emAberto = resumo.avaliadas.filter((a) => a.situacao !== 'paga')
 
   return (
@@ -236,7 +263,7 @@ export function ContratoDetalhe() {
 
       {emPagamento && (
         <PainelPagamento
-          item={emPagamento}
+          item={paraLinha(emPagamento)}
           aoFechar={() => setEmPagamento(null)}
           aoConcluir={(m) => {
             setEmPagamento(null)
@@ -260,8 +287,8 @@ export function ContratoDetalhe() {
         <PainelEstorno
           pagamento={estorno}
           aoFechar={() => setEstorno(null)}
-          aoConfirmar={(motivo) => {
-            estornarPagamento(estorno.id, motivo)
+          aoConfirmar={async (motivo) => {
+            await estornarPagamento(estorno.id, motivo)
             setEstorno(null)
             setMensagem('Pagamento desfeito. O registro original e o motivo ficam no histórico.')
           }}
@@ -280,10 +307,11 @@ function PainelQuitacao({
   aoFechar: () => void
   aoConcluir: (mensagem: string) => void
 }) {
-  const { estado, dataReferencia, registrarPagamento } = useApp()
+  const { estado, dataReferencia, quitarContrato } = useApp()
   const [data, setData] = useState(dataReferencia)
   const enviando = useRef(false)
   const [travado, setTravado] = useState(false)
+  const [falha, setFalha] = useState<string | null>(null)
 
   const contrato = estado.contratos.find((c) => c.id === contratoId)!
   const cliente = estado.clientes.find((c) => c.id === contrato.clienteId)!
@@ -294,24 +322,23 @@ function PainelQuitacao({
     [parcelas, contrato, cliente, estado.pagamentos, data],
   )
 
-  function confirmar() {
+  async function confirmar() {
     if (enviando.current) return
     enviando.current = true
     setTravado(true)
-    const pagamento = registrarPagamento({
-      contratoId,
-      parcelaIds: quitacao.parcelas.map((p) => p.parcela.id),
-      dataPagamento: data,
-      tipo: 'quitacao',
-    })
-    if (!pagamento) {
+    setFalha(null)
+    try {
+      // O servidor recalcula o saldo na data escolhida e grava tudo numa só
+      // transação. Só depois disso a tela declara a quitação feita.
+      await quitarContrato(contratoId, data)
+      aoConcluir(
+        `Quitação registrada em ${formatarData(data)} — ${quitacao.parcelas.length} parcelas, ${formatarMoeda(quitacao.totalCents)}.`,
+      )
+    } catch (e) {
+      setFalha(classificar(e).message)
       enviando.current = false
       setTravado(false)
-      return
     }
-    aoConcluir(
-      `Quitação registrada em ${formatarData(data)} — ${quitacao.parcelas.length} parcelas, ${formatarMoeda(pagamento.valorTotalCents)}.`,
-    )
   }
 
   return (
@@ -324,7 +351,7 @@ function PainelQuitacao({
           <button
             type="button"
             className="btn btn--primario btn--bloco"
-            onClick={confirmar}
+            onClick={() => void confirmar()}
             disabled={travado || quitacao.parcelas.length === 0}
           >
             <IconeQuitar tamanho={17} />
@@ -356,6 +383,8 @@ function PainelQuitacao({
           O saldo é cobrado integralmente, sem desconto dos juros contratuais. Não há renegociação,
           desconto nem pagamento parcial.
         </Aviso>
+
+        {falha && <Aviso tipo="erro">{falha}</Aviso>}
 
         <div className="tabela-rolagem" style={{ maxHeight: 260, overflowY: 'auto' }}>
           <table className="tabela tabela--compacta">
@@ -404,10 +433,11 @@ function PainelEstorno({
 }: {
   pagamento: Pagamento
   aoFechar: () => void
-  aoConfirmar: (motivo: string) => void
+  aoConfirmar: (motivo: string) => Promise<void>
 }) {
   const [motivo, setMotivo] = useState('')
   const [erro, setErro] = useState<string | null>(null)
+  const [enviando, setEnviando] = useState(false)
 
   return (
     <Painel
@@ -419,16 +449,22 @@ function PainelEstorno({
           <button
             type="button"
             className="btn btn--perigo btn--bloco"
+            disabled={enviando}
             onClick={() => {
               if (motivo.trim().length < 3) {
                 setErro('Escreva um motivo curto para a correção.')
                 return
               }
-              aoConfirmar(motivo.trim())
+              setEnviando(true)
+              setErro(null)
+              aoConfirmar(motivo.trim()).catch((e) => {
+                setErro(classificar(e).message)
+                setEnviando(false)
+              })
             }}
           >
             <IconeDesfazer tamanho={16} />
-            Confirmar reversão
+            {enviando ? 'Desfazendo…' : 'Confirmar reversão'}
           </button>
           <button type="button" className="btn btn--secundario btn--bloco" onClick={aoFechar}>
             Cancelar

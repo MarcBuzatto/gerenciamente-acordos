@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { formatarData, rotuloDiaSemanaCurto } from '../../domain/dates'
 import { FerramentaDemo } from './FerramentaDemo'
 import {
@@ -20,14 +20,18 @@ interface ItemNav {
 }
 
 export function Layout({ children }: { children: ReactNode }) {
-  const { perfil, dataReferencia } = useApp()
+  const { usuario, dataReferencia, demo, ehProprietario, operacao } = useApp()
   const [ferramentaAberta, setFerramentaAberta] = useState(false)
   const local = useLocation()
 
+  // A navegação acompanha o perfil: o assistente não abre contratos, porque
+  // essa tela mostra principal, juros e totais — dados que ele não acessa.
   const itens: ItemNav[] = [
-    { para: '/', rotulo: perfil === 'assistente' ? 'Hoje' : 'Início', Icone: IconeInicio },
+    { para: '/', rotulo: ehProprietario ? 'Início' : 'Hoje', Icone: IconeInicio },
     { para: '/clientes', rotulo: 'Clientes', Icone: IconeClientes },
-    { para: '/contratos', rotulo: 'Contratos', Icone: IconeContratos },
+    ...(ehProprietario
+      ? [{ para: '/contratos', rotulo: 'Contratos', Icone: IconeContratos }]
+      : []),
     { para: '/vencimentos', rotulo: 'Vencimentos', Icone: IconeVencimentos },
     { para: '/mais', rotulo: 'Mais', Icone: IconeMais },
   ]
@@ -36,24 +40,40 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="app">
-      <div className="faixa-demo nao-imprimir">
-        <span className="faixa-demo__ponto" aria-hidden />
-        <span className="faixa-demo__texto">
-          Demonstração — dados fictícios · {rotuloDiaSemanaCurto(dataReferencia)}{' '}
-          {formatarData(dataReferencia)}
-        </span>
-        <button
-          type="button"
-          className="faixa-demo__botao"
-          onClick={() => setFerramentaAberta(true)}
-        >
-          <IconeAjustes tamanho={13} />
-          Ajustar demo
-        </button>
-      </div>
+      {demo ? (
+        <div className="faixa-demo nao-imprimir">
+          <span className="faixa-demo__ponto" aria-hidden />
+          <span className="faixa-demo__texto">
+            Demonstração — dados fictícios · {rotuloDiaSemanaCurto(dataReferencia)}{' '}
+            {formatarData(dataReferencia)}
+          </span>
+          <button
+            type="button"
+            className="faixa-demo__botao"
+            onClick={() => setFerramentaAberta(true)}
+          >
+            <IconeAjustes tamanho={13} />
+            Ajustar demo
+          </button>
+        </div>
+      ) : (
+        <div className="faixa-demo faixa-demo--producao nao-imprimir">
+          <span className="faixa-demo__texto">
+            {operacao.nome}
+            {dataReferencia && ` · ${rotuloDiaSemanaCurto(dataReferencia)} ${formatarData(dataReferencia)}`}
+          </span>
+          <span className="faixa-demo__texto" style={{ flex: 'none', opacity: 0.75 }}>
+            {usuario.perfil === 'proprietario' ? 'Proprietário' : 'Assistente'}
+          </span>
+        </div>
+      )}
 
       <div className="corpo-com-lateral">
-        <nav className="nav-lateral nao-imprimir" aria-label="Seções">
+        <nav
+          className="nav-lateral nao-imprimir"
+          aria-label="Seções"
+          style={{ ['--qtd-nav' as string]: itens.length }}
+        >
           {itens.map((i) => (
             <NavLink key={i.para} to={i.para} end={i.para === '/'} className="nav-lateral__item">
               {({ isActive }) => (
@@ -71,7 +91,11 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
 
       {!ehExtrato && (
-        <nav className="nav-inferior nao-imprimir" aria-label="Navegação principal">
+        <nav
+          className="nav-inferior nao-imprimir"
+          aria-label="Navegação principal"
+          style={{ gridTemplateColumns: `repeat(${itens.length}, 1fr)` }}
+        >
           {itens.map((i) => (
             <NavLink
               key={i.para}
@@ -92,7 +116,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
       )}
 
-      {ferramentaAberta && <FerramentaDemo aoFechar={() => setFerramentaAberta(false)} />}
+      {ferramentaAberta && demo && <FerramentaDemo aoFechar={() => setFerramentaAberta(false)} />}
     </div>
   )
 }
