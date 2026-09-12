@@ -1,0 +1,78 @@
+# Configuração do projeto Supabase.
+#
+# Este arquivo declara o que o projeto precisa ter ligado. As chaves e a senha
+# do banco NÃO ficam aqui — elas vivem na sua máquina, no `supabase login` e no
+# `.env.local`.
+#
+#   npx supabase link --project-ref SEU_REF
+#   npx supabase db push          # aplica as migrações
+#   npx supabase config push      # aplica a configuração de auth abaixo
+#
+# Conferir depois no painel, porque nem toda opção é aplicável por `config push`
+# em todos os planos.
+
+project_id = "acordos-homologacao"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+major_version = 16
+
+[auth]
+enabled = true
+
+# TROQUE pelas URLs do ambiente antes do `config push`.
+# Sem isso, o link de confirmação de e-mail e o de redefinição de senha não
+# voltam para a aplicação — e no iPhone o link abre em aba nova, então a URL
+# precisa estar certa.
+site_url = "http://localhost:5173"
+additional_redirect_urls = [
+  "http://localhost:5173",
+  "http://localhost:5173/**",
+]
+
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+
+# Cadastro aberto: o proprietário cria a própria conta e a própria operação.
+enable_signup = true
+# Sem login anônimo: nenhuma sessão sem identidade toca dado de operação.
+enable_anonymous_sign_ins = false
+
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = true
+# Confirmação de e-mail obrigatória.
+enable_confirmations = true
+# Exige a senha atual para trocar de senha quando já se está logado.
+secure_password_change = true
+double_confirm_changes = true
+otp_expiry = 3600
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+# Verificação em duas etapas por aplicativo autenticador.
+#
+# ATENÇÃO: o template oficial da CLI registra que MFA é recurso do plano Pro.
+# Num projeto no plano gratuito, o cadastro do segundo fator pode falhar. Nesse
+# caso, veja `supabase/migrations/…_politica_autenticacao.sql`: o nível exigido
+# é ajustável por ambiente, direto no banco, e o script de conformidade avisa
+# quando está relaxado.
+[auth.mfa]
+max_enrolled_factors = 5
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.mfa.phone]
+enroll_enabled = false
+verify_enabled = false

@@ -28,6 +28,20 @@ $$;
 grant usage on schema public to anon, authenticated, service_role;
 grant anon, authenticated, service_role to current_user;
 
+-- IMPORTANTE — replica os privilégios PADRÃO do Supabase.
+--
+-- Num projeto Supabase, o schema `public` vem com ALTER DEFAULT PRIVILEGES
+-- concedendo TUDO a `anon`, `authenticated` e `service_role` em tabelas,
+-- funções e sequências. Ou seja: toda tabela nasce aberta, e é o REVOKE da
+-- migração 0003 que a fecha.
+--
+-- Sem reproduzir isso aqui, os REVOKE das migrações seriam no-ops no teste
+-- local e passariam despercebidos — enquanto no projeto real as tabelas
+-- ficariam abertas. Com esta reprodução, o teste exerce o mesmo cenário.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+
 create schema if not exists auth;
 
 create table if not exists auth.users (

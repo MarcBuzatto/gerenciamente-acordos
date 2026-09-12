@@ -60,6 +60,11 @@ jobs:
           psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d acordos_test \
             -f supabase/tests/01_dominio.sql
 
+      - name: Conformidade de segurança do esquema
+        run: |
+          psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d acordos_test \
+            -f supabase/tests/02_conformidade.sql
+
       - name: Testes de domínio e de integração
         run: npm test
 
