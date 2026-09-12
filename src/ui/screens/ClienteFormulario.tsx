@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useApp, type NovoClienteEntrada } from '../../state/AppContext'
+import { useApp, type DadosCliente } from '../../state/loja'
 import { Cabecalho } from '../components/Layout'
 import { Aviso, Campo, Recolhivel } from '../components/Base'
 import { normalizarEntradaData } from '../../domain/dates'
+import { classificar } from '../../data/api'
 
 const UFS = [
   'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ',
   'RN','RO','RR','RS','SC','SE','SP','TO',
 ]
 
-const VAZIO: NovoClienteEntrada = {
+const VAZIO: DadosCliente = {
   nome: '',
   telefone: '',
   cpfCnpj: '',
@@ -53,7 +54,7 @@ export function ClienteFormulario({ modo }: { modo: 'novo' | 'editar' }) {
     [modo, id, estado.clientes],
   )
 
-  const [dados, setDados] = useState<NovoClienteEntrada>(() => {
+  const [dados, setDados] = useState<DadosCliente>(() => {
     if (existente) {
       const { id: _i, operacaoId: _o, criadoEm: _c, ...resto } = existente
       return { ...VAZIO, ...resto }
@@ -61,8 +62,10 @@ export function ClienteFormulario({ modo }: { modo: 'novo' | 'editar' }) {
     return { ...VAZIO }
   })
   const [erros, setErros] = useState<Record<string, string>>({})
+  const [salvando, setSalvando] = useState(false)
+  const [falha, setFalha] = useState<string | null>(null)
 
-  function definir<K extends keyof NovoClienteEntrada>(chave: K, valor: NovoClienteEntrada[K]) {
+  function definir<K extends keyof DadosCliente>(chave: K, valor: DadosCliente[K]) {
     setDados((d) => ({ ...d, [chave]: valor }))
     setErros((e) => {
       if (!e[chave as string]) return e
@@ -82,27 +85,36 @@ export function ClienteFormulario({ modo }: { modo: 'novo' | 'editar' }) {
     return Object.keys(novos).length === 0
   }
 
-  function salvar(e: React.FormEvent) {
+  async function salvar(e: React.FormEvent) {
     e.preventDefault()
-    if (!validar()) return
-    const limpo: NovoClienteEntrada = {
+    if (!validar() || salvando) return
+    const limpo: DadosCliente = {
       ...dados,
       nome: dados.nome.trim().replace(/\s+/g, ' '),
       telefone: mascararTelefone(dados.telefone),
     }
-    if (modo === 'editar' && existente) {
-      atualizarCliente(existente.id, limpo)
-      navegar(`/clientes/${existente.id}`, { replace: true })
-      return
+    setSalvando(true)
+    setFalha(null)
+    try {
+      if (modo === 'editar' && existente) {
+        await atualizarCliente(existente.id, limpo)
+        navegar(`/clientes/${existente.id}`, { replace: true })
+        return
+      }
+      const cliente = await criarCliente(limpo)
+      if (retorno) {
+        navegar(`${retorno}${retorno.includes('?') ? '&' : '?'}cliente=${cliente.id}`, {
+          replace: true,
+        })
+        return
+      }
+      navegar(`/clientes/${cliente.id}`, { replace: true })
+    } catch (e) {
+      // Sem confirmação do servidor não há cadastro: a tela mostra a falha.
+      setFalha(classificar(e).message)
+    } finally {
+      setSalvando(false)
     }
-    const cliente = criarCliente(limpo)
-    if (retorno) {
-      navegar(`${retorno}${retorno.includes('?') ? '&' : '?'}cliente=${cliente.id}`, {
-        replace: true,
-      })
-      return
-    }
-    navegar(`/clientes/${cliente.id}`, { replace: true })
   }
 
   if (modo === 'editar' && !existente) {
@@ -122,7 +134,7 @@ export function ClienteFormulario({ modo }: { modo: 'novo' | 'editar' }) {
         voltarPara=""
       />
 
-      <form className="pilha" onSubmit={salvar} noValidate>
+      <form className="pilha" onSubmit={(e) => void salvar(e)} noValidate>
         <section className="cartao">
           <div className="pilha">
             <Campo rotulo="Nome" htmlFor="nome" obrigatorio erro={erros.nome}>
@@ -309,9 +321,15 @@ export function ClienteFormulario({ modo }: { modo: 'novo' | 'editar' }) {
           </div>
         </Recolhivel>
 
+        {falha && <Aviso tipo="erro">{falha}</Aviso>}
+
         <div className="pilha-sm" style={{ marginTop: 4 }}>
-          <button type="submit" className="btn btn--primario btn--bloco">
-            {modo === 'editar' ? 'Salvar alterações' : 'Cadastrar cliente'}
+          <button type="submit" className="btn btn--primario btn--bloco" disabled={salvando}>
+            {salvando
+              ? 'Salvando…'
+              : modo === 'editar'
+                ? 'Salvar alterações'
+                : 'Cadastrar cliente'}
           </button>
           <button
             type="button"

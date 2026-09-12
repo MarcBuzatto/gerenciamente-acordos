@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useApp } from '../../state/AppContext'
+import { useApp } from '../../state/loja'
 import { Cabecalho } from '../components/Layout'
-import { CampoBusca, Vazio } from '../components/Base'
+import { Aviso, CampoBusca, Vazio } from '../components/Base'
 import { IconeAdicionar, IconeSeta } from '../components/Icones'
 import { situacaoContrato } from '../../domain/cobranca'
 
@@ -11,7 +11,7 @@ function inicial(nome: string): string {
 }
 
 export function Clientes() {
-  const { estado, dataReferencia } = useApp()
+  const { estado, dataReferencia, carregando, falha, recarregar } = useApp()
   const navegar = useNavigate()
   const [busca, setBusca] = useState('')
 
@@ -54,7 +54,26 @@ export function Clientes() {
       <div className="pilha">
         <CampoBusca valor={busca} aoMudar={setBusca} placeholder="Buscar por nome ou telefone" />
 
-        {lista.length === 0 ? (
+        {falha && (
+          <Aviso tipo="erro">
+            {falha.message}{' '}
+            <button
+              type="button"
+              className="btn btn--fantasma btn--pequeno"
+              onClick={() => void recarregar()}
+            >
+              Tentar de novo
+            </button>
+          </Aviso>
+        )}
+
+        {carregando ? (
+          <div className="lista" aria-busy="true">
+            <div className="esqueleto" />
+            <div className="esqueleto" />
+            <div className="esqueleto" />
+          </div>
+        ) : lista.length === 0 ? (
           <Vazio
             titulo={busca ? 'Nenhum cliente encontrado' : 'Nenhum cliente ainda'}
             descricao={

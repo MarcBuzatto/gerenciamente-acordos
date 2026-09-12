@@ -1318,3 +1318,123 @@ table.tabela tbody tr:last-child td {
     display: block !important;
   }
 }
+
+/* ---------- Telas de acesso ---------- */
+
+.acesso {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px calc(24px + var(--safe-bottom));
+  background: var(--fundo);
+}
+
+.acesso__caixa {
+  width: 100%;
+  max-width: 420px;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sombra-md);
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.acesso__marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--verde-800);
+}
+
+.acesso__marca-icone {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--verde-100);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.acesso__titulo {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.acesso__descricao {
+  font-size: 14px;
+  color: var(--cinza-500);
+  line-height: 1.45;
+}
+
+.acesso__rodape {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: space-between;
+  border-top: 1px solid var(--borda);
+  padding-top: 10px;
+}
+
+.entrada--codigo {
+  font-size: 24px;
+  letter-spacing: 0.32em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.qr {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--borda);
+  border-radius: var(--r-md);
+}
+
+.qr img {
+  width: 190px;
+  height: 190px;
+}
+
+.chave-totp {
+  display: block;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--superficie-2);
+  border: 1px solid var(--borda);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* ---------- Estados de carga e falha ---------- */
+
+.esqueleto {
+  border-radius: var(--r-md);
+  background: linear-gradient(90deg, #eceeec 25%, #f5f7f5 37%, #eceeec 63%);
+  background-size: 400% 100%;
+  animation: brilho 1.3s ease infinite;
+  min-height: 64px;
+}
+
+@keyframes brilho {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .esqueleto { animation: none; }
+}
+
+.faixa-demo--producao {
+  background: var(--verde-800);
+  justify-content: space-between;
+}

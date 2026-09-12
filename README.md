@@ -1,32 +1,55 @@
-# Acordos — protótipo navegável de gestão de empréstimos
+# Acordos — gestão de empréstimos
 
-Demonstração funcional para validar fluxos com o cliente antes da implementação de produção.
-Dados fictícios, persistidos apenas no navegador. Não há banco, autenticação, integração
-bancária nem cobrança pelo uso.
+Sistema gratuito de gestão de empréstimos, com contas independentes e dados
+separados por operação. Roda em dois modos:
+
+- **Integrado** — Supabase (PostgreSQL + autenticação), login com verificação em
+  duas etapas e permissões aplicadas no banco. É o que vira o sistema real.
+- **Demonstração** — o protótipo aprovado, com dados fictícios no navegador,
+  para demonstrar fluxos e testar usabilidade. Sem login e sem servidor.
+
+Esta etapa entrega a versão integrada em **homologação**. Ainda não foi liberada
+para controlar dinheiro real — as pendências estão em
+[`docs/INTEGRACAO.md`](docs/INTEGRACAO.md).
 
 ## Como abrir
 
 ```bash
 npm install
-npm run dev
+
+npm run dev         # integrado — exige .env.local (veja .env.example)
+npm run dev:demo    # demonstração com dados fictícios, sem login
 ```
 
 Abre em `http://localhost:5173`. Para conferir o resultado de impressão do extrato, use
 o botão "Imprimir / PDF" na tela de extrato.
 
 ```bash
-npm run build     # tsc + build de produção
-npm run preview   # serve o build
-npm test          # testes das regras financeiras e de calendário
+npm run build       # tsc + build de produção
+npm run build:demo  # build da demonstração
+npm run preview     # serve o build
+npm test            # domínio, classificação de erros e integração com o banco
+npm run db:local    # recria um PostgreSQL local com todas as migrações
+npm run db:push     # aplica as migrações no projeto Supabase vinculado
 ```
+
+Os testes de banco são pulados com aviso quando não há PostgreSQL disponível;
+`npm run db:local` sobe um e os habilita.
+
+## Configuração e operação
+
+Variáveis, migrações, teste de permissões, separação entre ambientes,
+recuperação do segundo fator, ensaio de exportação/restauração e pendências:
+**[`docs/INTEGRACAO.md`](docs/INTEGRACAO.md)**.
 
 Feito para celular entre 360 e 430 px de largura, com adaptação para computador
 (navegação lateral a partir de 860 px).
 
-## Ferramenta da demonstração
+## Ferramenta da demonstração (só no modo demo)
 
-A faixa verde no topo mostra "Demonstração — dados fictícios" e a data de referência.
-O botão **Ajustar demo** abre o painel que alterna:
+No modo demonstração, a faixa verde no topo mostra "Demonstração — dados
+fictícios" e a data de referência, e o botão **Ajustar demo** abre o painel que
+alterna:
 
 - **Operação** — Operação Tomba (A) e Operação Centro (B), com dados totalmente separados.
 - **Perfil** — Proprietário e Assistente da operação selecionada.
@@ -38,6 +61,10 @@ O botão **Ajustar demo** abre o painel que alterna:
 Esses seletores simulam perfis e contas. **Não são autenticação nem isolamento de produção.**
 O mesmo vale para o armazenamento local: os dados ficam no `localStorage` do navegador,
 separados por identificador de operação apenas para a demonstração não misturar cenários.
+
+Nada disso existe na aplicação integrada: lá não há seletor de perfil, não há
+como trocar para uma operação sem vínculo, não há restauração de cenário, não
+entram dados fictícios e a data das transações vem do servidor.
 
 ## Fluxos disponíveis
 
@@ -74,13 +101,24 @@ src/
     contratos.ts     montagem do contrato e das parcelas
     cobranca.ts      atraso, situação, quitação
     indicadores.ts   painéis e resumos derivados dos registros
-  data/        dados fictícios e persistência local por operação
-  state/       store da aplicação
+  data/        api.ts (acesso ao Supabase), dados fictícios e persistência local
+  lib/         cliente do Supabase
+  state/       loja.ts (interface das telas) + provedor demo e provedor integrado
+  servidor/    testes de integração com o banco
   ui/          telas e componentes
+supabase/
+  migrations/  esquema, domínio em SQL, RLS e funções transacionais
+  tests/       bootstrap local e paridade das regras em SQL
 ```
 
-Os cálculos ficam inteiramente em `src/domain` e são cobertos por testes. A interface só lê
-resultados.
+Os cálculos ficam em `src/domain` e são cobertos por testes. A interface só lê
+resultados. No modo integrado, **o servidor é quem determina os valores**: as
+mesmas regras existem em SQL (`supabase/migrations/…_dominio.sql`), e um teste
+confere que as duas implementações concordam.
+
+As telas consomem uma interface única (`src/state/loja.ts`), implementada pelo
+provedor de demonstração e pelo provedor integrado. Foi isso que permitiu
+preservar os fluxos aprovados ao ligar o banco.
 
 ## Regras aplicadas
 
@@ -138,7 +176,9 @@ percorrer junto com o cliente.
 
 ## O que foi verificado
 
-`npm test` cobre, entre outros casos:
+`npm test` — 78 testes, em três frentes.
+
+**Domínio (38)** — as regras financeiras e de calendário, em TypeScript:
 
 1. R$ 1.000 com 40% e 20 parcelas resulta em R$ 1.400 e parcelas de R$ 70.
 2. Os arredondamentos preservam o total, o principal e os juros, inclusive com resto.
@@ -146,28 +186,60 @@ percorrer junto com o cliente.
    quantidade contratada; nenhum vencimento cai em dia excluído.
 4. R$ 70 atrasados passam a R$ 140 uma única vez e não voltam a crescer, inclusive quando o
    dia seguinte é domingo. Semanal e mensal não recebem acréscimo.
-5. Pagamento retroativo respeita a data real no cálculo e no painel: recebido no vencimento e
-   digitado dois dias depois entra sem acréscimo, no dia do recebimento.
-6. A mesma parcela não é paga duas vezes; cliques repetidos no botão geram um só lançamento.
+5. Pagamento retroativo respeita a data real no cálculo e no painel.
+6. A mesma parcela não é paga duas vezes.
 7. Criar um contrato novo preserva parcelas e saldo do anterior.
-8. As operações não misturam identificadores, clientes nem contratos.
-9. O assistente não vê os indicadores restritos e é bloqueado na criação de contrato.
-10. A reversão preserva o histórico, mantém o motivo e devolve o saldo.
-11. O extrato fecha com as parcelas: soma das parcelas = total contratado, soma das pagas =
-    total pago, soma das abertas = saldo, e as contagens fecham com a quantidade de parcelas.
+8. A reversão preserva o histórico e devolve o saldo; o extrato fecha com as parcelas.
 
-Além dos testes, os fluxos foram percorridos no navegador em 360 px, 390 px e 1280 px:
-nenhuma rolagem horizontal nas telas principais, criação de cliente no meio do contrato sem
-perder o preenchimento, aviso de ajuste quando o primeiro vencimento cai em domingo,
-registro de pagamento, quitação antecipada, reversão com motivo e impressão do extrato em A4
-com o cabeçalho da tabela repetido nas páginas seguintes.
+**Erros da API (7)** — falha de rede vira "sem conexão, nada foi salvo", nunca um
+sucesso silencioso; sessão expirada, falta de permissão, conflito e entrada
+inválida têm mensagens próprias.
+
+**Integração com o banco (33)** — batendo direto nas tabelas e nas RPC, com cinco
+identidades (proprietário A, assistente A, proprietário B, usuário sem vínculo e
+sessão anônima):
+
+1. Uma operação não lê nem altera registros de outra, e um cliente não pode ser movido.
+2. Trocar IDs no payload não dá acesso cruzado — nem na RPC, nem apontando para
+   parcela ou cliente de outra operação.
+3. O assistente não lê contratos, parcelas, pagamentos nem auditoria, e a função de
+   indicadores o recusa. A projeção que ele recebe não tem principal, juros, taxa nem totais.
+4. O assistente não promove o próprio papel, não convida e não revoga membros.
+5. Sessão anônima não acessa nada.
+6. Sessão em `aal1` (sem segundo fator) não acessa dados da operação; a revogação de
+   acesso vale já na consulta seguinte, com a sessão aberta; convite só é aceito pelo
+   destinatário e o banco guarda apenas o hash do token.
+7. Contrato e parcelas são criados atomicamente, e um contrato inválido não deixa parcela órfã.
+8. Duas sessões simultâneas na mesma parcela geram um único recebimento válido.
+9. Reenvio com a mesma chave de idempotência não duplica lançamento.
+10. Pagamento retroativo mantém data e valor; pagamento futuro e anterior ao contrato são recusados.
+11. O atraso da diária dobra uma vez.
+12. Quitação e reversão preservam integridade e auditoria, e a parcela revertida aceita
+    um novo pagamento válido.
+13. Indicadores e extrato reconciliam com contratos, parcelas e pagamentos.
+14. Histórico financeiro não pode ser apagado nem ter valores ou autoria adulterados.
+
+O arquivo `supabase/tests/01_dominio.sql` repete os mesmos casos objetivos **em SQL**,
+garantindo que o cálculo do servidor e o do domínio em TypeScript não divirjam.
+
+Além dos testes, os fluxos foram percorridos no navegador em 360, 390 e 1280 px, nos dois
+modos: sem rolagem horizontal nas telas principais, registro de pagamento, criação de
+cliente no meio do contrato sem perder o preenchimento, aviso de ajuste quando o primeiro
+vencimento cai em domingo, impressão do extrato em A4 com cabeçalho repetido, tela de acesso
+comunicando falha de conexão sem declarar sucesso, e o assistente sem Contratos na navegação
+nem indicadores na tela.
 
 ## Limitações
 
-- Protótipo de demonstração. Os dados vivem no navegador e somem ao limpar o site.
-- Perfis e operações não são segurança: qualquer pessoa com a página troca de perfil.
+- Esta etapa é de **homologação**. Não foi liberada para dinheiro real e não migra dados.
+- Backup de produção **não** está feito: existe comando de exportação, faltam automação,
+  retenção, armazenamento externo e teste de restauração.
+- A entrega de e-mail depende de SMTP próprio; sem isso, confirmação de cadastro e
+  recuperação de senha ficam limitadas ao SMTP de desenvolvimento do Supabase.
+- A recuperação do segundo fator depende de confirmação no projeto (ver
+  [`docs/INTEGRACAO.md`](docs/INTEGRACAO.md), seção 7).
 - Sem integração bancária, sem envio automático de mensagens, sem consulta externa de
   documentos, endereço ou placa.
 - O extrato é operacional. Não é contrato, não tem cláusulas jurídicas nem assinatura.
-- A escolha de React + TypeScript + Vite serve ao protótipo e não fecha a arquitetura de
-  produção.
+- No modo demonstração os dados vivem no navegador e somem ao limpar o site; perfis e
+  operações ali não são segurança.
